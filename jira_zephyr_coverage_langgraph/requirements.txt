@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+httpx
+openai
+faiss-cpu
+pydantic
+pytest
