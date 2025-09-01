@@ -1,0 +1,108 @@
+from langgraph.graph import StateGraph, END
+from langchain_openai import ChatOpenAI
+import requests
+
+# -------------------------
+# Jira + Zephyr Config
+# -------------------------
+JIRA_BASE_URL = "https://your-domain.atlassian.net"
+JIRA_USER_EMAIL = "your-email@company.com"
+JIRA_API_TOKEN = "your_api_token"
+ZEPHYR_BASE_URL = JIRA_BASE_URL  # Same for Jira Cloud Zephyr
+OPENAI_API_KEY = "your_openai_api_key"
+
+# -------------------------
+# Define State
+# -------------------------
+class State(dict):
+    requirement: str
+    testcases: list
+    coverage_analysis: str
+
+# -------------------------
+# Jira Fetch Node
+# -------------------------
+def fetch_jira_issue(state: State):
+    issue_key = state.get("issue_key")
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
+    resp = requests.get(url, auth=(JIRA_USER_EMAIL, JIRA_API_TOKEN))
+    resp.raise_for_status()
+    data = resp.json()
+    
+    description = ""
+    if data["fields"].get("description"):
+        description = data["fields"]["description"]["content"][0]["content"][0]["text"]
+    
+    state["requirement"] = description
+    return state
+
+# -------------------------
+# Zephyr Fetch Node
+# -------------------------
+def fetch_zephyr_testcases(state: State):
+    issue_key = state.get("issue_key")
+    # ⚠️ Adjust endpoint based on Zephyr edition (Scale / Squad / Enterprise)
+    url = f"{ZEPHYR_BASE_URL}/rest/zapi/latest/teststep/{issue_key}"
+    resp = requests.get(url, auth=(JIRA_USER_EMAIL, JIRA_API_TOKEN))
+    resp.raise_for_status()
+    data = resp.json()
+    
+    state["testcases"] = data if isinstance(data, list) else []
+    return state
+
+# -------------------------
+# LLM Coverage Analysis Node
+# -------------------------
+def analyze_coverage(state: State):
+    requirement = state.get("requirement", "")
+    testcases = state.get("testcases", [])
+    
+    testcase_text = "\n".join(
+        [f"- {tc.get('name', '')}: {tc.get('objective', '')}" for tc in testcases]
+    )
+
+    prompt = f"""
+    Requirement:
+    {requirement}
+
+    Test Cases:
+    {testcase_text}
+
+    Task: Check whether ALL aspects of the requirement are covered by the test cases.
+    Respond with one of:
+    - "Yes, fully covered"
+    - "Partially covered (list missing cases)"
+    - "Not covered"
+    """
+
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=OPENAI_API_KEY)
+    result = llm.invoke(prompt)
+    
+    state["coverage_analysis"] = result.content
+    return state
+
+# -------------------------
+# Build LangGraph
+# -------------------------
+workflow = StateGraph(State)
+
+workflow.add_node("fetch_jira", fetch_jira_issue)
+workflow.add_node("fetch_zephyr", fetch_zephyr_testcases)
+workflow.add_node("coverage_check", analyze_coverage)
+
+workflow.set_entry_point("fetch_jira")
+workflow.add_edge("fetch_jira", "fetch_zephyr")
+workflow.add_edge("fetch_zephyr", "coverage_check")
+workflow.add_edge("coverage_check", END)
+
+app = workflow.compile()
+
+# -------------------------
+# Run
+# -------------------------
+if __name__ == "__main__":
+    input_state = State(issue_key="ABC-123")  # Replace with your Jira issue key
+    result = app.invoke(input_state)
+    print("Requirement:", result["requirement"])
+    print("Testcases:", result["testcases"])
+    print("Coverage Analysis:", result["coverage_analysis"])
