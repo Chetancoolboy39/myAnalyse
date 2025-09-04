@@ -1,0 +1,78 @@
+from openai import OpenAI
+from sklearn.metrics.pairwise import cosine_similarity
+
+client = OpenAI()
+
+# -------------------------------
+# Mock Jira Requirement & Zephyr Steps
+# -------------------------------
+jira_requirement = "System should allow login using email and password, and lock the user after 5 failed attempts."
+zephyr_steps = [
+    "Navigate to login page",
+    "Enter email and password",
+    "Click login button",
+    "Verify user is redirected to dashboard"
+]
+
+# -------------------------------
+# Step 1: Extract atomic functionalities from requirement
+# -------------------------------
+def extract_functionalities(requirement):
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a QA analyst. Break requirements into atomic functionalities for testing."},
+            {"role": "user", "content": f"Requirement: {requirement}\n\nList each distinct functionality as a bullet point."}
+        ],
+        temperature=0
+    )
+    return [line.strip("-• ").strip() for line in resp.choices[0].message.content.split("\n") if line.strip()]
+
+functionalities = extract_functionalities(jira_requirement)
+print("\n🔹 Functionalities Identified:")
+for f in functionalities:
+    print(" -", f)
+
+# -------------------------------
+# Step 2: Embedding similarity check per functionality
+# -------------------------------
+def get_embedding(text, model="text-embedding-3-small"):
+    return client.embeddings.create(model=model, input=text).data[0].embedding
+
+threshold = 0.70
+req_funcs_emb = [get_embedding(func) for func in functionalities]
+steps_emb = [get_embedding(step) for step in zephyr_steps]
+
+coverage_map = {}
+for func, func_emb in zip(functionalities, req_funcs_emb):
+    scores = [cosine_similarity([func_emb], [step_emb])[0][0] for step_emb in steps_emb]
+    max_score = max(scores)
+    matched_step = zephyr_steps[scores.index(max_score)]
+    coverage_map[func] = {"covered": max_score >= threshold, "best_step": matched_step, "score": max_score}
+
+# -------------------------------
+# Step 3: Compute % coverage
+# -------------------------------
+covered = sum(1 for f in coverage_map if coverage_map[f]["covered"])
+coverage_percent = (covered / len(functionalities)) * 100
+
+print("\n🔹 Functional Coverage Report:")
+for func, result in coverage_map.items():
+    status = "✅ Covered" if result["covered"] else "❌ Missed"
+    print(f"- {func} → {status} (best step: '{result['best_step']}', score: {result['score']:.2f})")
+
+print(f"\nFunctional Coverage: {covered}/{len(functionalities)} → {coverage_percent:.1f}%")
+
+# -------------------------------
+# Step 4: Ask LLM for human-readable gaps
+# -------------------------------
+resp = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": "You are a QA reviewer."},
+        {"role": "user", "content": f"Requirement: {jira_requirement}\n\nTest Steps:\n" + "\n".join(zephyr_steps) + f"\n\nBased on this, which requirement functionalities are not covered?"}
+    ],
+    temperature=0
+)
+print("\n🔹 LLM Gap Analysis:")
+print(resp.choices[0].message.content)
