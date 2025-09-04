@@ -1,0 +1,68 @@
+{
+  "JIRA-101": {
+    "requirement": "System should allow login using email and password, and lock the user after 5 failed attempts.",
+    "zephyr_steps": [
+      "Navigate to login page",
+      "Enter email and password",
+      "Click login button",
+      "Verify user is redirected to dashboard"
+    ],
+    "functionalities": [
+      "Allow login using email and password",
+      "Lock user after 5 failed login attempts"
+    ],
+    "embedding_coverage": {
+      "functionalities": {
+        "Allow login using email and password": {
+          "covered": true,
+          "best_step": "Enter email and password",
+          "score": 0.89
+        },
+        "Lock user after 5 failed login attempts": {
+          "covered": false,
+          "best_step": "Verify user is redirected to dashboard",
+          "score": 0.41
+        }
+      },
+      "coverage_percent": 50.0
+    },
+    "gap_analysis": {
+      "missing": ["Lock user after 5 failed login attempts"],
+      "covered": ["Allow login using email and password"]
+    }
+  },
+  "JIRA-102": {
+    "requirement": "System should allow users to reset password via email verification.",
+    "zephyr_steps": [
+      "Trigger password reset request",
+      "Receive password reset email",
+      "Set new password using reset link"
+    ],
+    "functionalities": [
+      "Allow users to reset password",
+      "Verify reset via email verification"
+    ],
+    "embedding_coverage": {
+      "coverage_percent": 100.0,
+      "functionalities": {
+        "Allow users to reset password": {
+          "covered": true,
+          "best_step": "Trigger password reset request",
+          "score": 0.84
+        },
+        "Verify reset via email verification": {
+          "covered": true,
+          "best_step": "Receive password reset email",
+          "score": 0.87
+        }
+      }
+    },
+    "gap_analysis": {
+      "missing": [],
+      "covered": [
+        "Allow users to reset password",
+        "Verify reset via email verification"
+      ]
+    }
+  }
+}
