@@ -1,0 +1,43 @@
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
+def load_model():
+    """
+    Loads the all-mpnet-base-v2 model.
+    First run will download (~420MB), then cached locally in Windows.
+    """
+    model_name = "all-mpnet-base-v2"
+    model = SentenceTransformer(model_name)
+    return model
+
+def get_similarity(model, text1: str, text2: str) -> float:
+    """
+    Returns cosine similarity between two texts using embeddings.
+    """
+    emb1, emb2 = model.encode([text1, text2])
+    similarity = cosine_similarity([emb1], [emb2])
+    return similarity[0][0]
+
+if __name__ == "__main__":
+    # Load the semantic model
+    model = load_model()
+
+    # Example requirement and test steps
+    requirement = "User should be able to reset password via email link"
+    test_steps = [
+        "Verify password reset functionality works with email token",
+        "Check login with Google authentication",
+        "Ensure mobile app opens without crashing",
+    ]
+
+    print(f"Requirement: {requirement}\n")
+    print("🔍 Checking coverage against test steps:\n")
+
+    for step in test_steps:
+        score = get_similarity(model, requirement, step)
+        print(f"Step: {step}")
+        print(f"Similarity Score: {score:.4f}")
+        if score > 0.7:
+            print("✅ Likely covers requirement.\n")
+        else:
+            print("❌ Might not cover.\n")
