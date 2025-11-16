@@ -1,0 +1,18 @@
+{
+  "mandatory": [
+    "title",
+    "description"
+  ],
+  "optional": [
+    "priority",
+    "labels",
+    "environment",
+    "assignee"
+  ],
+  "dynamic_rules": {
+    "priority": "optional",
+    "labels": "optional",
+    "environment": "optional",
+    "assignee": "optional"
+  }
+}
