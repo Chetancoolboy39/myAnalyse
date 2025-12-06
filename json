@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "sonarqube-mcp": {
+      "type": "sse",
+      "url": "http://localhost:5001/mcp"
+    }
+  }
+}
