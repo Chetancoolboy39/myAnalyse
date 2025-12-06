@@ -1,0 +1,111 @@
+from mcp.server.fastmcp import FastMCP
+from fastapi import FastAPI
+import uvicorn
+import os
+import requests
+from typing import List, Optional, TypedDict
+
+# ======================================
+# MCP CONFIG
+# ======================================
+mcp = FastMCP("SonarQube-MCP", json_response=True)
+app = FastAPI()
+mcp.bind_fastapi(app)  # Expose MCP via HTTP/SSE
+
+# ======================================
+# ENV CONFIG
+# ======================================
+SONAR_URL = os.environ.get("SONAR_URL", "").rstrip("/")
+SONAR_TOKEN = os.environ.get("SONAR_TOKEN")
+
+if not SONAR_URL or not SONAR_TOKEN:
+    raise RuntimeError("Environment variables SONAR_URL and SONAR_TOKEN are required")
+
+
+def _auth_headers():
+    return {"Authorization": f"Bearer {SONAR_TOKEN}"}
+
+
+def _get_json(path, params=None):
+    resp = requests.get(
+        f"{SONAR_URL}{path}", headers=_auth_headers(), params=params, timeout=20
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ======================================
+# RESPONSE SCHEMA
+# ======================================
+class IssueSummary(TypedDict, total=False):
+    project_key: str
+    file_path: Optional[str]
+    line: Optional[int]
+    end_line: Optional[int]
+    severity: str
+    type: str
+    message: str
+    rule_description: Optional[str]
+    code_snippet: Optional[str]
+
+
+# ======================================
+# MCP TOOLS
+# ======================================
+@mcp.tool()
+def list_project_issues(project_key: str) -> List[IssueSummary]:
+    """Return all SonarQube issues for a project."""
+    results = []
+    page = 1
+
+    while True:
+        data = _get_json(
+            "/api/issues/search",
+            params={"projectKeys": project_key, "ps": 200, "p": page},
+        )
+
+        issues = data.get("issues", [])
+        if not issues:
+            break
+
+        components = {c["key"]: c for c in data.get("components", [])}
+
+        for issue in issues:
+            comp = issue.get("component")
+            file_path = components.get(comp, {}).get("path")
+            line = issue.get("line")
+            end_line = issue.get("endLine")
+
+            snippet = None
+            if line:
+                src = _get_json(
+                    "/api/sources/lines",
+                    params={"key": comp, "from": line - 2, "to": line + 2},
+                )
+                lines = src.get("sources", [])
+                snippet = "\n".join([x.get("code", "") for x in lines])
+
+            results.append(
+                IssueSummary(
+                    project_key=project_key,
+                    file_path=file_path,
+                    line=line,
+                    end_line=end_line,
+                    severity=issue.get("severity"),
+                    type=issue.get("type"),
+                    message=issue.get("message"),
+                    rule_description=issue.get("message"),
+                    code_snippet=snippet,
+                )
+            )
+
+        page += 1
+
+    return results
+
+
+# ======================================
+# HTTP STARTUP
+# ======================================
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=5001)
